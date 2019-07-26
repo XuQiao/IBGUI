@@ -51,5 +51,6 @@ python3 MainFrame.py
 
 To do:
 * Add setup.py
+* Support more than one account switch and calculation, submit sychronized orders
 * Add more test case to make it more robust
 * Get from more reliable source, like IB historical data database
