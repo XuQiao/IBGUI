@@ -47,12 +47,12 @@ class Actions():
         self.time_p = 'OneWeek'
 
     def get_msg(self):
-        msgs = [msg.decode('utf-8') for msg in self.app.msgs]
-        msgs = "\n".join(msgs)      
+        msgs = [msg.replace(b'\x00',b'').decode('utf-8') for msg in self.app.msgs]
+        msgs = "\n".join(msgs)
         self.context = {"isConnected":self.app.isConnected()}
-        self.context.update({"Msgs": (msgs or 
-            "\n".join(list(self.app.ret['Error'])[-1]['Msg'])) if len(self.app.ret['Error'])>0
-            else "Unknown Error"})
+        self.context.update({"Msgs": msgs or 
+            ("\n".join(list(self.app.ret['Error'])[-1]['Msg']) if 
+                len(self.app.ret['Error'])>0 else "Unknown Error")})
         self.context["Positions"] = sorted(list(self.app.ret["Positions"]),
             key=lambda k: k['Symbol'])
         self.context["OrderStatus"] = sorted(list(self.app.ret["OrderStatus"]),

@@ -48,7 +48,7 @@ class LoginDialog(wx.Dialog):
         hashed_password = "22fb21d43ebb50bc53fcf719a610a24cb2aa897182457ccc46ad66d75a74670c2b40d28db82e01b892b18bc3ffa31bb57bd607f8ae4aa7f918a9ddfe48517809"
         user_name = self.user.GetValue()
         user_password = self.password.GetValue()
-        if user_name == 'd': # for test
+        if user_name == 'test': # for test
         #hashlib.sha512(user_password.encode('utf-8')).hexdigest() == hashed_password and \
         #hashlib.sha512(user_name.encode('utf-8')).hexdigest() == hashed_username:
             print("You are now logged in!")

@@ -218,11 +218,9 @@ class MainFrame(wx.Frame):
         self.st6 = wx.StaticText(self.pnl, label="Message from the server", size=(-1,30))
         self.sizer1.Add(self.st6,0, wx.EXPAND,1)
         Msgs = self.action.context.get("Msgs", "Nothing wrong from server")
-        print('Msgs',Msgs)
-        self.st3 = wx.TextCtrl(self.pnl,wx.ID_ANY,wx.EmptyString, wx.DefaultPosition, 
-            (-1,100),wx.TE_READONLY|wx.TE_MULTILINE)
-        self.st3.SetValue(str(Msgs))
-        self.sizer1.Add(self.st3,0,wx.EXPAND,1)
+        self.st3 = wx.TextCtrl(self.pnl,value=Msgs, size=(-1,100),style=wx.TE_MULTILINE|wx.TE_RICH|wx.TE_BESTWRAP)
+        #self.st3.SetValue(str(Msgs))
+        self.sizer1.Add(self.st3,0,wx.EXPAND|wx.ALL)
                
         self.sizer0 = wx.BoxSizer(wx.HORIZONTAL)
         self.sizer0.Add(self.sizer1)
@@ -317,6 +315,7 @@ class MainFrame(wx.Frame):
             # save the current contents in the file
             pathname = fileDialog.GetPath()
             try:
+                self.action.context.pop('HistoricalData',None)
                 flat = flatten_json.flatten(self.action.context)
                 flat = json_normalize(flat)
                 flat.to_csv(pathname)
