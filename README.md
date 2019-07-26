@@ -45,6 +45,7 @@ log in your TWS workstation first. (recommend first try it in a paper account), 
 Only through the TWS or the gateway the tool could make connections with the IB server. Currently you can use username “test” to test the features.
 
 ```python
+mkdir Data
 python3 MainFrame.py
 ```
 
