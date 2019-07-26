@@ -5,6 +5,11 @@ import wx
 import Login
 import views
 from Forms import OrderForm
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
+import csv
+from pandas.io.json import json_normalize
+import numpy as np
+import flatten_json
 
 class MainFrame(wx.Frame):
     def __init__(self, *args, **kw):
@@ -17,13 +22,20 @@ class MainFrame(wx.Frame):
         self.authenticated = self.dlg.logged_in
         if not self.authenticated:
             self.Close()
-        self.Maximize()
+
+        # create a menu bar
+        self.makeMenuBar()
+
+        # and a status bar
+        self.CreateStatusBar()
+        self.SetStatusText("Log in successful!")
         self.basiclayout()
+        self.Show()
+        self.action = views.Actions()
 
     def basiclayout(self):
         # create a panel in the frame
         self.pnl = wx.Panel(self, wx.ID_ANY)
-        self.action = views.Actions()
         self.sizer = wx.BoxSizer(wx.VERTICAL)
 
         btn_logout = wx.Button(self.pnl, label="Logout",pos = (210,20))
@@ -41,121 +53,111 @@ class MainFrame(wx.Frame):
         self.sizer_commands = wx.BoxSizer(wx.HORIZONTAL)
         self.sizer_commands.AddMany([btn_conn,btn_logout])
         
-        self.sizer.Add(self.sizer_greet,1,wx.ALL|wx.EXPAND,5)
-        self.sizer.Add(self.sizer_commands,1,wx.ALL|wx.EXPAND,5)
-        #msg box
-        Msgs = self.action.context.get("Msgs", "")
-        st3 = wx.StaticText(self.pnl, label=Msgs, size=(100,300), pos = (500,300))
-        #self.sizer.Add(st3)
-        # create a menu bar
-        self.makeMenuBar()
+        self.sizer.Add(self.sizer_greet,0,wx.ALL|wx.EXPAND,3)
+        self.sizer.Add(self.sizer_commands,0,wx.ALL|wx.EXPAND,3)
 
-        # and a status bar
-        self.CreateStatusBar()
-        self.SetStatusText("Log in successful!")
         self.pnl.SetSizer(self.sizer)
-        #self.pnl.Layout()
+        self.pnl.Layout()
         #self.pnl.Refresh()
-        self.Show()
 
     def update(self):
-        if self.action.app.ret:
-            btn_refresh = wx.Button(self.pnl, label="Refresh",pos = (10,20))
-            btn_refresh.Bind(wx.EVT_BUTTON, self.OnRefresh)
-            btn_disconn = wx.Button(self.pnl, label="DisConnect",pos = (310,20))
-            btn_disconn.Bind(wx.EVT_BUTTON, self.OnDisconnect)
-            btn_clear = wx.Button(self.pnl, label="Clear",pos = (410,20))
-            btn_clear.Bind(wx.EVT_BUTTON, self.OnClear)
-            
-            btn_risk = wx.Button(self.pnl, label="Risk Factors", pos = (510, 20))
-            btn_risk.Bind(wx.EVT_BUTTON, self.OnRisk)
-            
-            btn_placeorder = wx.Button(self.pnl, label="Submit Order", pos = (610, 20))
-            btn_placeorder.Bind(wx.EVT_BUTTON, self.OnPlaceOrder)
+        self.Maximize()
+        if 'sizer2' in self.__dict__:
+            self.sizer2.Clear(True)
+        if 'sizer1' in self.__dict__:
+            self.sizer1.Clear(True)
+        self.sizer_commands.Clear(True)
+        self.sizer.Clear(True)
+        self.basiclayout()
+        self.Method = wx.RadioBox(self.pnl, label = 'Method', pos = (80,30), choices = ["VarCov","Historical","MonteCarlo"], 
+            majorDimension = 1, style = wx.RA_SPECIFY_ROWS)
+        self.Method.SetStringSelection(self.action.method)
+        self.Time_p = wx.RadioBox(self.pnl, label = 'Time_Interval', pos = (60,30), choices = ["OneDay","OneWeek","OneMonth"], 
+            majorDimension = 1, style = wx.RA_SPECIFY_ROWS) 
+        self.Time_p.SetStringSelection(self.action.time_p)
+        self.Method.Bind(wx.EVT_RADIOBOX, self.OnMethod),
+        self.Time_p.Bind(wx.EVT_RADIOBOX, self.OnTime_p),
 
-            self.sizer_commands.AddMany([btn_refresh,btn_disconn,btn_clear,
-            btn_risk,btn_placeorder])
+        if self.action.app.ret:
+            self.btn_refresh = wx.Button(self.pnl, label="Refresh",pos = (10,20))
+            self.btn_refresh.Bind(wx.EVT_BUTTON, self.OnRefresh)
+            self.btn_disconn = wx.Button(self.pnl, label="DisConnect",pos = (310,20))
+            self.btn_disconn.Bind(wx.EVT_BUTTON, self.OnDisconnect)
+            self.btn_clear = wx.Button(self.pnl, label="Clear",pos = (410,20))
+            self.btn_clear.Bind(wx.EVT_BUTTON, self.OnClear)
+            
+            self.btn_risk = wx.Button(self.pnl, label="Risk Factors", pos = (510, 20))
+            self.btn_risk.Bind(wx.EVT_BUTTON, self.OnRisk)
+            self.btn_efffter = wx.Button(self.pnl, label="Eff Frontier", pos = (610, 20))
+            self.btn_efffter.Bind(wx.EVT_BUTTON, self.OnEfffter)
+            
+            self.btn_placeorder = wx.Button(self.pnl, label="Submit Order", pos = (710, 20))
+            self.btn_placeorder.Bind(wx.EVT_BUTTON, self.OnPlaceOrder)
+
+            self.sizer_commands.AddMany([self.btn_refresh,self.btn_disconn,self.btn_clear,
+            self.btn_risk,self.btn_placeorder,self.btn_efffter,self.Method, self.Time_p])
 
         self.sizer2 = wx.BoxSizer(wx.HORIZONTAL)
-        st4 = wx.StaticText(self.pnl, label = "account list:", pos = (10,150))
-        self.sizer2.Add(st4)
-        self.list_ctrl4 = wx.ListCtrl(self.pnl, pos = (10, 100), size=(-1,200), 
+
+        #account list
+        self.st4 = wx.StaticText(self.pnl, label = "account list:", pos = (10,150))
+        self.sizer2.Add(self.st4)
+        self.list_ctrl4 = wx.ListCtrl(self.pnl, pos = (10, 100), size=(-1,100), 
             style=wx.LC_REPORT|wx.BORDER_SUNKEN|wx.LC_SORT_ASCENDING)
         for column, prop in enumerate(['Account']):
             self.list_ctrl4.InsertColumn(column, prop)
             for row, account_list in enumerate(self.action.context['Account_list']):
                 if column == 0:    
-                    self.list_ctrl4.InsertItem(column, account_list) 
+                    self.list_ctrl4.InsertItem(row, account_list) 
                 else:
                     self.list_ctrl4.SetItem(row, column, account_list)
-        self.sizer2.Add(self.list_ctrl4,1,wx.EXPAND)
+        self.sizer2.Add(self.list_ctrl4,0,wx.EXPAND)
 
         # account property
-        self.list_ctrl1 = wx.ListCtrl(self.pnl, pos = (10, 50), size=(-1,200), 
+        self.list_ctrl1 = wx.ListCtrl(self.pnl, pos = (10, 50), size=(-1,100), 
             style=wx.LC_REPORT|wx.BORDER_SUNKEN|wx.LC_SORT_ASCENDING)  
         for column, prop in enumerate(['Tag','Value']):
             self.list_ctrl1.InsertColumn(column, prop)
             for row, accountSummary in enumerate(self.action.context['AccountSummary']):
-                if column == 0:    
-                    self.list_ctrl1.InsertItem(column, accountSummary[prop]) 
+                temp = accountSummary[prop]
+                if type(temp) in [float, int, np.float64]:
+                    temp = '%.2f' % temp
+                if 'Value' in prop and 'VaR' in self.action.context['AccountSummary'][row]['Tag']:
+                    temp = '%s(%.2f%%)'%(temp,float(accountSummary[prop])/np.sum(self.action.assets)*100)
+                if column == 0:
+                    self.list_ctrl1.InsertItem(row, temp) 
                 else:
-                    self.list_ctrl1.SetItem(row, column, accountSummary[prop])
-        self.sizer2.Add(self.list_ctrl1,1,wx.EXPAND)
+                    self.list_ctrl1.SetItem(row, column, temp)
+            self.list_ctrl1.SetColumnWidth(column, wx.LIST_AUTOSIZE)
+
+        self.sizer2.Add(self.list_ctrl1,0,wx.EXPAND)
         
         #p & l
-        st2 = wx.StaticText(self.pnl, label="P && L:", pos = (10,200))
-        self.sizer2.Add(st2)
-        self.list_ctrl2 = wx.ListCtrl(self.pnl, pos = (10, 100), size=(-1,200), 
+        self.st2 = wx.StaticText(self.pnl, label="P && L:", pos = (10,200))
+        self.sizer2.Add(self.st2)
+        self.list_ctrl2 = wx.ListCtrl(self.pnl, pos = (10, 100), size=(-1,100), 
             style=wx.LC_REPORT|wx.BORDER_SUNKEN|wx.LC_SORT_ASCENDING)
         for column, prop in enumerate(['DailyPnL','RealizedPnL','UnrealizedPnL']):
             self.list_ctrl2.InsertColumn(column, prop)
-            row = 0
+            self.list_ctrl2.SetColumnWidth(column, wx.LIST_AUTOSIZE)
             for row, daily_PnL in enumerate(self.action.context['Daily_PnL']):
                 temp = daily_PnL[prop]
-                if type(temp) in [float, int]:
+                if type(temp) in [float, int, np.float64]:
                     temp = '%.2f' % temp
                 if column == 0:
-                    self.list_ctrl2.InsertItem(column, temp)
+                    self.list_ctrl2.InsertItem(row, temp)
                 else:
                     self.list_ctrl2.SetItem(row, column, temp)
+            self.list_ctrl2.SetColumnWidth(column, wx.LIST_AUTOSIZE)
 
-        self.sizer2.Add(self.list_ctrl2,1,wx.EXPAND)
+        self.sizer2.Add(self.list_ctrl2,0,wx.EXPAND)
 
-        self.sizer3 = wx.BoxSizer(wx.VERTICAL)
-        self.sizer3.Add(self.sizer2)
-
-        #open orders
-        st5 = wx.StaticText(self.pnl, label="Open Orders:", pos = (10,200))
-        self.sizer_cancelform = wx.BoxSizer(wx.HORIZONTAL)
-        self.sizer_cb = wx.BoxSizer(wx.VERTICAL)
-        self.sizer3.Add(st5)
-        self.list_ctrl4 = wx.ListCtrl(self.pnl, pos = (10, 100), size=(-1,200),
-            style=wx.LC_REPORT|wx.BORDER_SUNKEN|wx.LC_SORT_ASCENDING) 
-        btn_cancelorders = {}
-        for column, prop in enumerate(['Id','Status','Filled','Remaining','AvgFillPrice','WhyHeld'
-            ,'MktCapPrice','Status','OrderId','Symbol','SecType','Action','OrderType','LmtPrice'
-            ,'TotalQty']):
-            self.list_ctrl4.InsertColumn(column, prop)
-            for row, orderstatus in enumerate(self.action.context["OrderStatus"]):
-                for openorder in self.action.context["OpenOrder"]:
-                    if openorder["OrderId"] == orderstatus["Id"]:
-                        temp = orderstatus[prop] if column < 8 else openorder[prop]
-                        if type(temp) in [float, int]:
-                            temp = '%.2f' % temp
-                        if column == 0:
-                            self.list_ctrl4.InsertItem(column, temp)
-                        else:
-                            self.list_ctrl4.SetItem(row, column, temp)
-                btn_cancelorders[openorder['OrderId']] = wx.Button(self.pnl, label="Cancel Order",name=str(openorder['OrderId']))
-                btn_cancelorders[openorder['OrderId']].Bind(wx.EVT_BUTTON, self.OnCancelOrder)
-        for button in btn_cancelorders.values():
-            self.sizer_cb.Add(button)
-        self.sizer_cancelform.AddMany([self.list_ctrl4, self.sizer_cb])
-        self.sizer3.Add(self.sizer_cancelform)
+        self.sizer1 = wx.BoxSizer(wx.VERTICAL)
+        self.sizer1.Add(self.sizer2)
 
         #positions
-        st1 = wx.StaticText(self.pnl, label="current Positions:", pos=(70,150))
-        self.sizer3.Add(st1)
+        self.st1 = wx.StaticText(self.pnl, label="current Positions:", pos=(70,150))
+        self.sizer1.Add(self.st1)
         self.list_ctrl3 = wx.ListCtrl(self.pnl, pos = (10, 50), size=(-1,200), 
             style=wx.LC_REPORT|wx.BORDER_SUNKEN|wx.LC_SORT_ASCENDING)
         for column, prop in enumerate(['Symbol','Position','AvgCost','DailyPnL','UnrealizedPnL','RealizedPnL'
@@ -165,22 +167,75 @@ class MainFrame(wx.Frame):
                 if prop not in positions:
                     positions[prop] = ""
                 temp = positions[prop]
-                if type(positions[prop]) in [float, int]:
+                if type(positions[prop]) in [float, int, np.float64]:
                     temp = '%.2f' % positions[prop]
+                if 'VaR' in prop and positions[prop]:
+                    temp = '%s(%.2f%%)'%(temp,
+                        float(positions[prop])/(float(positions['AvgCost'])*float(positions['Position']))*100)
                 if column == 0:
-                    self.list_ctrl3.InsertItem(column, temp)
+                    self.list_ctrl3.InsertItem(row, temp)
                 else:
                     self.list_ctrl3.SetItem(row, column, temp)
-        self.sizer3.Add(self.list_ctrl3,1,wx.EXPAND)
+                self.list_ctrl3.SetColumnWidth(column, wx.LIST_AUTOSIZE)
+        self.sizer1.Add(self.list_ctrl3,1,wx.EXPAND)
+
+        #open orders
+        self.st5 = wx.StaticText(self.pnl, label="Open Orders:", pos = (10,200))
+        self.sizer_cancelform = wx.BoxSizer(wx.HORIZONTAL)
+        self.sizer_cb = wx.BoxSizer(wx.VERTICAL)
+        self.sizer1.Add(self.st5)
+        self.list_ctrl4 = wx.ListCtrl(self.pnl, pos = (10, 100), size=(-1,150),
+            style=wx.LC_REPORT|wx.BORDER_SUNKEN|wx.LC_SORT_ASCENDING) 
+        self.btn_cancelorders = {}
+        for column, prop in enumerate(['OrderId','Symbol','SecType','Action','OrderType','LmtPrice'
+            ,'TotalQty','Status','Filled','Remaining','AvgFillPrice','WhyHeld'
+            ,'MktCapPrice','Id']):
+            self.list_ctrl4.InsertColumn(column, prop)
+            for row, orderstatus in enumerate(self.action.context["OrderStatus"]):
+                for openorder in self.action.context["OpenOrder"]:
+                    if openorder["OrderId"] == orderstatus["Id"]:
+                        temp = openorder[prop] if column < 8 else orderstatus[prop]
+                        if type(temp) in [float, int]:
+                            temp = '%.2f' % temp
+                        if column == 0:
+                            self.list_ctrl4.InsertItem(row, temp)
+                            self.btn_cancelorders[orderstatus['Id']] = wx.Button(self.pnl, label="Cancel Order",name=str(orderstatus['Id']))
+                            self.btn_cancelorders[orderstatus['Id']].Bind(wx.EVT_BUTTON, self.OnCancelOrder)
+                        else:
+                            self.list_ctrl4.SetItem(row, column, temp)
+                self.list_ctrl4.SetColumnWidth(column, wx.LIST_AUTOSIZE)
+        self.sizer_cb.AddSpacer(16);
+        for button in self.btn_cancelorders.values():
+            self.sizer_cb.Add(button)
+        self.sizer_cancelform.AddMany([self.list_ctrl4, self.sizer_cb])
+        self.sizer1.Add(self.sizer_cancelform)
 
         #make orders
-
         self.orderform = OrderForm(self)
-        self.sizer3.Add(self.orderform.sizer,1,wx.ALL|wx.EXPAND,5)
+        self.sizer1.Add(self.orderform.sizer,0,wx.EXPAND,1)
 
-        self.sizer.Add(self.sizer3)
+        #msg box
+        self.st6 = wx.StaticText(self.pnl, label="Message from the server", size=(-1,30))
+        self.sizer1.Add(self.st6,0, wx.EXPAND,1)
+        Msgs = self.action.context.get("Msgs", "Nothing wrong from server")
+        print('Msgs',Msgs)
+        self.st3 = wx.TextCtrl(self.pnl,wx.ID_ANY,wx.EmptyString, wx.DefaultPosition, 
+            (-1,100),wx.TE_READONLY|wx.TE_MULTILINE)
+        self.st3.SetValue(str(Msgs))
+        self.sizer1.Add(self.st3,0,wx.EXPAND,1)
+               
+        self.sizer0 = wx.BoxSizer(wx.HORIZONTAL)
+        self.sizer0.Add(self.sizer1)
+        # risk plot
+        if 'figure' in self.action.__dict__:
+            self.canvas = FigureCanvas(self.pnl, -1, self.action.figure)
+            self.sizer0.Add(self.canvas, 0, wx.EXPAND)
+        
+        self.sizer.Add(self.sizer0,0,wx.EXPAND,1)
+
+        #self.Refresh()
+        #print(self.action.context)
         self.pnl.SetSizerAndFit(self.sizer)
-        self.Refresh()
         self.Show()
 
     def makeMenuBar(self):
@@ -253,7 +308,21 @@ class MainFrame(wx.Frame):
             self.SetStatusText("Not connected.")
 
     def OnExport(self, event):
-        wx.MessageBox("not saved...")
+        with wx.FileDialog(self, "Save CSV file", wildcard="CSV files (*.csv)|*.csv",
+                       style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as fileDialog:
+
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return     # the user changed their mind
+
+            # save the current contents in the file
+            pathname = fileDialog.GetPath()
+            try:
+                flat = flatten_json.flatten(self.action.context)
+                flat = json_normalize(flat)
+                flat.to_csv(pathname)
+            except IOError:
+                wx.LogError("Cannot save current data in file '%s'." % pathname)
+            wx.MessageBox("Saved")
 
     def OnLogout(self, event):
         self.authenticated = False
@@ -271,16 +340,29 @@ class MainFrame(wx.Frame):
         self.SetStatusText("Clearing...")
         self.action.clear()
         self.SetStatusText("Cleared.")
+        self.update()
 
     def OnRisk(self, event):
         self.SetStatusText("Calculating...")
         self.action.risks()
         self.SetStatusText("Calculated.")
+        self.update()
 
+    def OnEfffter(self, event):
+        self.SetStatusText("Getting Frontier...")
+        self.action.efffter()
+        self.SetStatusText("Ready.")
+        self.update()
+        
     def OnPlaceOrder(self, event):
+        print('orderform',self.orderform.cleaned_data)
         self.SetStatusText("Placing...")
         self.action.place_order(self.orderform)
         self.SetStatusText("Place Done.")
+        if len(self.action.app.ret['Error']) > 0:
+            self.st3.SetValue(str(self.action.app.ret['Error']))
+        else:
+            self.update()
 
     def OnCancelOrder(self, event):
         self.SetStatusText("Canceling...")
@@ -288,6 +370,14 @@ class MainFrame(wx.Frame):
         ID = int(button.GetName())
         self.action.cancel_order(ID)
         self.SetStatusText("Cancel Done.")
+    
+    def OnMethod(self, event):
+        self.action.method = self.Method.GetStringSelection()
+        self.SetStatusText("{} is clicked from Radio Box".format(self.Method.GetStringSelection()))
+
+    def OnTime_p(self, event):
+        self.action.time_p = self.Time_p.GetStringSelection()
+        self.SetStatusText("{} is clicked from Radio Box".format(self.Time_p.GetStringSelection()))
 
     def OnAbout(self, event):
         """Display an About Dialog"""

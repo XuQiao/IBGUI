@@ -16,6 +16,7 @@ import pandas as pd
 import urllib.request, json
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
+import matplotlib
 
 class Actions():
     def __init__(self):
@@ -49,8 +50,8 @@ class Actions():
         msgs = [msg.decode('utf-8') for msg in self.app.msgs]
         msgs = "\n".join(msgs)      
         self.context = {"isConnected":self.app.isConnected()}
-        self.context.update({"Msgs": msgs or 
-            list(self.app.ret['Error'])[-1]['Msg'] if len(self.app.ret['Error'])>0
+        self.context.update({"Msgs": (msgs or 
+            "\n".join(list(self.app.ret['Error'])[-1]['Msg'])) if len(self.app.ret['Error'])>0
             else "Unknown Error"})
         self.context["Positions"] = sorted(list(self.app.ret["Positions"]),
             key=lambda k: k['Symbol'])
@@ -60,14 +61,15 @@ class Actions():
             key=lambda k:k['OrderId'])
         self.context["AccountSummary"] = sorted(list(self.app.ret["AccountSummary"]),
             key=lambda k:k['Tag'])
+        self.context["HistoricalData"] = sorted(list(self.app.ret["HistoricalData"]),
+            key=lambda k:k['Symbol'])
         self.context.update({k:v for k,v in self.app.ret.items() if k not in self.context})
-
+    
     def clear(self):
         self.context["Msgs"] = ""
 
     def connect(self):
         self.app.reqIds(-1)
-        self.context.clear()
         with self.app.msg_queue.mutex:
             self.app.msg_queue.queue.clear()
         self.app.msgs.clear()
@@ -114,12 +116,11 @@ class Actions():
                     time.sleep(0.2)
                     self.app.cancelPnLSingle(self.app.nextValidOrderId-1)
                     time.sleep(0.2)
-                    #self.app.callMap[self.app.nextValidOrderId] = contract
+                    self.app.callMap[self.app.nextValidOrderId] = positions['ConId']
                     self.app.reqMktData(self.app.nextOrderId(), contract, "104,106,258", False, False, []);
                     time.sleep(0.2)
                     self.app.cancelMktData(self.app.nextValidOrderId-1)
                 self.app.run()
-                
                 temp_Positions = set()
                 for positions in self.app.ret["Positions"]:
                     temp_Positions.add(positions)
@@ -194,11 +195,13 @@ class Actions():
     def cancel_order(self, Id):
         print("cancelling")
         self.app.cancelOrder(Id)
-        self.get_msg()
         self.connect()
 
     def risks(self):
         self.get_stats()
+        self.get_msg()
+
+    def efffter(self):
         self.get_efffrontier()
         self.get_msg()
 
@@ -215,6 +218,7 @@ class Actions():
         #queryTime = (datetime.datetime.today() - datetime.timedelta(days=180)).strftime("%Y%m%d %H:%M:%S")
         #self.app.reqHistoricalData(self.app.nextOrderId(), contract, queryTime,"1 M", "1 day", "MIDPOINT", 1, 1, False, [])
     def get_efffrontier(self):
+        self.get_stats()
         self.getMCeffFrontier()
         self.plotMCeffFrontier()
         self.getMineffFrontier()
@@ -243,11 +247,9 @@ class Actions():
             #down_url = "https://eodhistoricaldata.com/api/eod/"+symbol+".US?from=2004-07-01&to=2019-07-01& \
                 #api_token=OeAFFmMliFG5orCUuwAKQ8l4WWFQ67YX&period=d&fmt=json"
             
-            down_url = "https://www.alphavantage.co/query?apikey=W06CSNGZGRK6S2MB&function=TIME_SERIES_DAILY_ADJUSTED&outputsize=compact&symbol="+symbol
+            down_url = "https://www.alphavantage.co/query?apikey=W06CSNGZGRK6S2MB&function=TIME_SERIES_DAILY_ADJUSTED&outputsize=full&symbol="+symbol
             file = "Data/data_alphavantage_adjustclose_daily_{}_{}.csv".format(symbol, today)
-            if os.path.exists(file):
-                df = pd.read_csv(file,index_col="date")
-            else:
+            while not os.path.exists(file):
                 simple_list = []
                 with urllib.request.urlopen(down_url) as url:
                     data = json.loads(url.read().decode())
@@ -257,26 +259,30 @@ class Actions():
                     df = pd.DataFrame(simple_list,columns=['date','adjclose'],index=None)
                     df = df.set_index("date")
                     df.to_csv(file)
+            df = pd.read_csv(file,index_col="date")
             self.app.ret["HistoricalData"].add(Hashabledict({'Symbol':symbol, 'TS':df},name="HistoricalData"))
+            self.get_msg()
 
     def getcovmatrix(self):
         print("get covmatrix************* ")
         self.covMatrix = {}
         stocks_df = []
         self.stocks = []
-        for historicalData in self.app.ret["HistoricalData"]:
-            stocks_df.append(historicalData['TS'])
-            self.stocks.append(historicalData['Symbol'])
-        self.stocks_df = pd.concat(stocks_df,axis=1)
+        for historicalData in self.context["HistoricalData"]:
+            contract = historicalData['Symbol']
+            for positions in self.app.ret['Positions']:
+                if positions['Symbol'] == contract:
+                    stocks_df.append(historicalData['TS'])
+                    self.stocks.append(historicalData['Symbol'])
+        self.stocks_df = pd.concat(stocks_df,axis=1,sort=False)
         self.stocks_df.columns = self.stocks
-        self.log_ret = np.log(self.stocks_df/self.stocks_df.shift(self.time_interval))
-        self.ret = self.stocks_df/self.stocks_df.shift(self.time_interval) - 1
+        self.log_ret = np.log(self.stocks_df/self.stocks_df.shift(-self.time_interval))
+        self.ret = self.stocks_df/self.stocks_df.shift(-self.time_interval) - 1
         self.covMatrix = self.log_ret.cov()
-        print(self.stocks_df)
 
     def getbeta(self):
         print("get beta************* ")
-        for historicalData in self.app.ret["HistoricalData"]:
+        for historicalData in self.context["HistoricalData"]:
             contract = historicalData['Symbol']
             temp_Positions = set()
             for positions in self.app.ret['Positions']:
@@ -290,7 +296,7 @@ class Actions():
         print(self.method)
         print("get VaR************* ")
         assets = {}
-        for historicalData in self.app.ret["HistoricalData"]:
+        for historicalData in self.context["HistoricalData"]:
             contract = historicalData['Symbol']
             meanreturn = np.mean(self.ret[contract].dropna())
             stdreturn = np.std(self.ret[contract].dropna())
@@ -328,37 +334,31 @@ class Actions():
                     temp_Positions.add(positions)
             del self.app.ret['Positions']
             self.app.ret['Positions'] = temp_Positions
-        print(assets)
-        print(np.array(assets.values()))
-        self.assets = np.array(assets.values())
-        print("matrix:", self.matmul(assets, self.covMatrix, assets))
-        print("df:", np.dot(self.assets.T, np.dot(self.covMatrix, self.assets)))
+        self.assets = np.array(list(assets.values()))
+        self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_90"},name="AccountSummary"))
+        self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_95"},name="AccountSummary"))
+        self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_99"},name="AccountSummary"))
+        self.app.ret['AccountSummary'].add(Hashabledict({"ReqId": -1, "Account": self.app.account, 
+              "Tag": "VaR_90", "Currency": "",
+              "Value": 1.282 * np.sqrt(np.dot(self.assets.T, np.dot(self.covMatrix, self.assets)))},
+            name="AccountSummary"))
         self.app.ret['AccountSummary'].add(Hashabledict({"ReqId": -1, "Account": self.app.account,
-              "Tag": "VaR_90", "Value": 1.282 * self.matmul(assets, self.covMatrix, assets), "Currency": ""}))
+              "Tag": "VaR_95", "Currency": "",
+              "Value": 1.645 * np.sqrt(np.dot(self.assets.T, np.dot(self.covMatrix, self.assets)))},
+            name="AccountSummary"))
         self.app.ret['AccountSummary'].add(Hashabledict({"ReqId": -1, "Account": self.app.account,
-              "Tag": "VaR_95", "Value": 1.645 * self.matmul(assets, self.covMatrix, assets), "Currency": ""}))
-        self.app.ret['AccountSummary'].add(Hashabledict({"ReqId": -1, "Account": self.app.account,
-              "Tag": "VaR_99", "Value": 2.326 * self.matmul(assets, self.covMatrix, assets), "Currency": ""}))
-
-    def matmul(self, left, mid, right):
-        _sum = 0
-        _sumx = 0
-        for contractx, weightx in left.items():
-            _sumx += weightx
-            _sumy = 0
-            for contracty, weighty in right.items():
-                _sumy += weighty
-                cov = mid[contractx][contracty]
-                _sum +=  weightx * cov * weighty
-        return np.sqrt(_sum)
+              "Tag": "VaR_99", "Currency": "",
+              "Value": 2.326 * np.sqrt(np.dot(self.assets.T, np.dot(self.covMatrix, self.assets)))},
+            name="AccountSummary"))
 
     def getMCeffFrontier(self):
-        self.num_ports = 10000
-        self.log_ret = np.log(self.stocks_df/self.stocks_df.shift(self.time_interval))
+        self.num_ports = 100
+        self.log_ret = np.log(self.stocks_df/self.stocks_df.shift(-self.time_interval))
         self.all_weights = np.zeros((self.num_ports, len(self.stocks)))
         self.ret_arr = np.zeros(self.num_ports)
         self.vol_arr = np.zeros(self.num_ports)
         self.sharpe_arr = np.zeros(self.num_ports)
+        self.timespan = 252/self.time_interval
         for x in range(self.num_ports):
             # Weights
             weights = np.array(np.random.random(len(self.stocks)))
@@ -368,33 +368,35 @@ class Actions():
             self.all_weights[x,:] = weights
             
             # Expected return
-            self.ret_arr[x] = np.sum( (self.log_ret.mean() * weights * 252))
+            self.ret_arr[x] = np.sum( (self.log_ret.mean() * weights * self.timespan))
             
             # Expected volatility
-            self.vol_arr[x] = np.sqrt(np.dot(weights.T, np.dot(self.log_ret.cov()*252, weights)))
+            self.vol_arr[x] = np.sqrt(np.dot(weights.T, np.dot(self.log_ret.cov()*self.timespan, weights)))
             
             # Sharpe Ratio
             self.sharpe_arr[x] = self.ret_arr[x]/self.vol_arr[x]
 
     def plotMCeffFrontier(self):
-        max_sr_ret = self.ret_arr[self.sharpe_arr.argmax()]
-        max_sr_vol = self.vol_arr[self.sharpe_arr.argmax()]
-        curr_sr_ret = np.sum( (self.log_ret.mean() * self.currweights * 252))
-        curr_sr_vol = np.sqrt(np.dot(self.assets.T, np.dot(self.log_ret.cov()*252, self.assets)))
-        plt.figure(figsize=(12,8))
-        plt.scatter(self.vol_arr, self.ret_arr, c=self.sharpe_arr, cmap='viridis')
-        plt.colorbar(label='Sharpe Ratio')
-        plt.xlabel('Volatility')
-        plt.ylabel('Return')
-        plt.scatter(max_sr_vol, max_sr_ret,c='red', s=50) # red dot
-        plt.scatter(curr_sr_vol, curr_sr_ret,c='black', s=50) # black dot
-        plt.savefig('figs/mcftier.png')
-        plt.show()
+        self.max_sr_ret = self.ret_arr[self.sharpe_arr.argmax()]
+        self.max_sr_vol = self.vol_arr[self.sharpe_arr.argmax()]
+        self.curr_weight = self.assets/np.sum(self.assets)
+        print("weights for max sharpe", self.stocks, self.all_weights[self.sharpe_arr.argmax(),:])
+        self.curr_sr_ret = np.sum( (self.log_ret.mean() * self.curr_weight * self.timespan))
+        self.curr_sr_vol = np.sqrt(np.dot(self.curr_weight.T, np.dot(self.log_ret.cov()*self.timespan, self.curr_weight)))
+        #plt.figure(figsize=(12,8))
+        #plt.scatter(self.vol_arr, self.ret_arr, c=self.sharpe_arr, cmap='viridis')
+        #plt.colorbar(label='Sharpe Ratio')
+        #plt.xlabel('Volatility')
+        #plt.ylabel('Return')
+        #plt.scatter(max_sr_vol, max_sr_ret,c='red', s=50) # red dot
+        #plt.scatter(curr_sr_vol, curr_sr_ret,c='black', s=50) # black dot
+        #plt.savefig('figs/mcftier.png')
+        #plt.show()
 
     def get_ret_vol_sr(self,weights):
         weights = np.array(weights)
-        ret = np.sum(self.log_ret.mean() * weights) * 252
-        vol = np.sqrt(np.dot(weights.T, np.dot(self.log_ret.cov()*252, weights)))
+        ret = np.sum(self.log_ret.mean() * weights) * self.timespan
+        vol = np.sqrt(np.dot(weights.T, np.dot(self.log_ret.cov()*self.timespan, weights)))
         sr = ret/vol
         return np.array([ret, vol, sr])
 
@@ -410,7 +412,7 @@ class Actions():
         return self.get_ret_vol_sr(weights)[1]
 
     def getMineffFrontier(self):
-        self.frontier_y = np.linspace(0,0.3,200)
+        self.frontier_y = np.linspace(0,0.5,20)
         self.frontier_x = []
         bounds = [(0,1)]*len(self.stocks)
         init_guess = [1./len(self.stocks)]*len(self.stocks)
@@ -423,11 +425,40 @@ class Actions():
             self.frontier_x.append(result['fun'])
 
     def plotMineffFrontier(self):
-        plt.figure(figsize=(12,8))
-        plt.scatter(self.vol_arr, self.ret_arr, c=self.sharpe_arr, cmap='viridis')
-        plt.colorbar(label='Sharpe Ratio')
-        plt.xlabel('Volatility')
-        plt.ylabel('Return')
-        plt.plot(self.frontier_x,self.frontier_y, 'r--', linewidth=3)
+        self.figure = plt.figure()
+        axes = self.figure.add_subplot(211)
+        im = axes.scatter(self.vol_arr, self.ret_arr, c=self.sharpe_arr, cmap='viridis')
+        plt.colorbar(im,label='Sharpe Ratio')
+        axes.set_xlabel('Yearly Volatility')
+        axes.set_ylabel('Yearly Return')
+        axes.scatter(self.max_sr_vol, self.max_sr_ret,c='red', s=50, label="max sharpe portifolio") # red dot
+        axes.scatter(self.curr_sr_vol, self.curr_sr_ret,c='black', s=50, label='current portifolio') # black dot
+        axes.legend()
+        axes.plot(self.frontier_x,self.frontier_y, 'r--', linewidth=3)
+        axes = self.figure.add_subplot(212)
+        N = len(self.curr_weight)
+        width = 0.8
+        _X = np.arange(N)
+        bar1 = axes.bar(_X-width/2.+0/2.*width, self.curr_weight, 
+            width=width/2., color='b', align='edge')
+        bar2 = axes.bar(_X-width/2.+1/2.*width, self.all_weights[self.sharpe_arr.argmax(),:], 
+            width=width/2., color='g', align='edge')
+
+        def autolabel(rects):
+            """
+            Attach a text label above each bar displaying its height
+            """
+            for rect in rects:
+                height = rect.get_height()
+                axes.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+                        '%.1f%%' % (height*100),
+                        ha='center', va='bottom')
+        autolabel(bar1)
+        autolabel(bar2)
+        axes.set_ylabel("portifolio weights")
+        axes.set_xticks(_X)
+        axes.set_xticklabels(self.stocks)
+        axes.legend( (bar1, bar2), ('current portifolio','optimized portifolio'),loc='best' )
+        self.figure.tight_layout()
         plt.savefig('figs/bdftier.png')
-        plt.show()
+        #plt.show()

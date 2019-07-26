@@ -60,6 +60,12 @@ class Hashabledict(OrderedDict):
         elif self.name == "HistoricalData":
             #return hash(self['requestId'])
             return hash(self['Symbol'])
+        elif self.name == "Daily_PnL":
+            return hash(self['ReqId'])
+        elif self.name == "Daily_PnL_Single":
+            return hash(self['ReqId'])
+        elif self.name == "TickGeneric":
+            return hash("{},{}".format(self['TickerId'],self['TickType']))
         else:
             return hash(frozenset(self))
     def __eq__(self, other):
@@ -394,13 +400,13 @@ class TestApp(TestWrapper, TestClient):
               "Account": order.account, "Symbol": contract.symbol, "SecType": contract.secType,
               "Exchange": contract.exchange, "Action": order.action, "OrderType": order.orderType,
               "TotalQty": order.totalQuantity, "CashQty": order.cashQty, 
-              "LmtPrice": order.lmtPrice, "AuxPrice": order.auxPrice, "Status:": orderState.status}
+              "LmtPrice": order.lmtPrice, "AuxPrice": order.auxPrice, "Status": orderState.status}
         self.ret["OpenOrder"].add(Hashabledict(results,name="OpenOrder"))
-        print("OpenOrder. PermId: ", order.permId, "ClientId:", order.clientId, " OrderId:", orderId, 
-              "Account:", order.account, "Symbol:", contract.symbol, "SecType:", contract.secType,
-              "Exchange:", contract.exchange, "Action:", order.action, "OrderType:", order.orderType,
-              "TotalQty:", order.totalQuantity, "CashQty:", order.cashQty, 
-              "LmtPrice:", order.lmtPrice, "AuxPrice:", order.auxPrice, "Status:", orderState.status)
+        #print("OpenOrder. PermId: ", order.permId, "ClientId:", order.clientId, " OrderId:", orderId, 
+        #      "Account:", order.account, "Symbol:", contract.symbol, "SecType:", contract.secType,
+        #      "Exchange:", contract.exchange, "Action:", order.action, "OrderType:", order.orderType,
+        #      "TotalQty:", order.totalQuantity, "CashQty:", order.cashQty, 
+        #      "LmtPrice:", order.lmtPrice, "AuxPrice:", order.auxPrice, "Status:", orderState.status)
 
         order.contract = contract
         self.permId2ord[order.permId] = order
@@ -429,11 +435,11 @@ class TestApp(TestWrapper, TestClient):
               lastFillPrice, "ClientId": clientId, "WhyHeld":
               whyHeld, "MktCapPrice": mktCapPrice}
         self.ret["OrderStatus"].add(Hashabledict(results,name="OrderStatus"))
-        print("OrderStatus. Id:", orderId, "Status:", status, "Filled:", filled,
-              "Remaining:", remaining, "AvgFillPrice:", avgFillPrice,
-              "PermId:", permId, "ParentId:", parentId, "LastFillPrice:",
-              lastFillPrice, "ClientId:", clientId, "WhyHeld:",
-              whyHeld, "MktCapPrice:", mktCapPrice)
+        #print("OrderStatus. Id:", orderId, "Status:", status, "Filled:", filled,
+        #      "Remaining:", remaining, "AvgFillPrice:", avgFillPrice,
+        #      "PermId:", permId, "ParentId:", parentId, "LastFillPrice:",
+        #      lastFillPrice, "ClientId:", clientId, "WhyHeld:",
+        #      whyHeld, "MktCapPrice:", mktCapPrice)
     # ! [orderstatus]
 
 
@@ -570,8 +576,8 @@ class TestApp(TestWrapper, TestClient):
         results = {"ReqId": reqId, "Account": account,
               "Tag": tag, "Value": value, "Currency": currency}
         self.ret["AccountSummary"].add(Hashabledict(results,name="AccountSummary"))
-        print("AccountSummary. ReqId:", reqId, "Account:", account,
-              "Tag: ", tag, "Value:", value, "Currency:", currency)
+        #print("AccountSummary. ReqId:", reqId, "Account:", account,
+        #      "Tag: ", tag, "Value:", value, "Currency:", currency)
     # ! [accountsummary]
 
     @iswrapper
@@ -628,9 +634,9 @@ class TestApp(TestWrapper, TestClient):
               contract.secType, "Currency": contract.currency,
               "Position": position, "AvgCost": avgCost}
         self.ret["Positions"].add(Hashabledict(results,name="Positions"))
-        print("Account:", account, "ConId:", contract.conId, "Symbol:", contract.symbol, "SecType:",
-              contract.secType, "Currency:", contract.currency,
-              "Position:", position, "Avg cost:", avgCost)
+        #print("Account:", account, "ConId:", contract.conId, "Symbol:", contract.symbol, "SecType:",
+        #      contract.secType, "Currency:", contract.currency,
+        #      "Position:", position, "Avg cost:", avgCost)
     # ! [position]
 
     @iswrapper
@@ -692,9 +698,9 @@ class TestApp(TestWrapper, TestClient):
         super().pnl(reqId, dailyPnL, unrealizedPnL, realizedPnL)
         results = {"ReqId": reqId, "DailyPnL": dailyPnL,
               "UnrealizedPnL": unrealizedPnL, "RealizedPnL": realizedPnL}
-        self.ret["Daily_PnL"].add(Hashabledict(results))
-        print("Daily PnL. ReqId:", reqId, "DailyPnL:", dailyPnL,
-              "UnrealizedPnL:", unrealizedPnL, "RealizedPnL:", realizedPnL)
+        self.ret["Daily_PnL"].add(Hashabledict(results,name="Daily_PnL"))
+        #print("Daily PnL. ReqId:", reqId, "DailyPnL:", dailyPnL,
+        #      "UnrealizedPnL:", unrealizedPnL, "RealizedPnL:", realizedPnL)
     # ! [pnl]
 
     @iswrapper
@@ -704,10 +710,10 @@ class TestApp(TestWrapper, TestClient):
         super().pnlSingle(reqId, pos, dailyPnL, unrealizedPnL, realizedPnL, value)
         results = {"ReqId": reqId, "Position": pos, "DailyPnL": dailyPnL,
               "UnrealizedPnL": unrealizedPnL, "RealizedPnL": realizedPnL, "Value": value}
-        self.ret["Daily_PnL_Single"].add(Hashabledict(results))
-        print("Daily PnL Single. ReqId:", reqId, "Position:", pos,
-              "DailyPnL:", dailyPnL, "UnrealizedPnL:", unrealizedPnL,
-              "RealizedPnL:", realizedPnL, "Value:", value)
+        self.ret["Daily_PnL_Single"].add(Hashabledict(results,name="Daily_PnL_Single"))
+        #print("Daily PnL Single. ReqId:", reqId, "Position:", pos,
+        #      "DailyPnL:", dailyPnL, "UnrealizedPnL:", unrealizedPnL,
+        #      "RealizedPnL:", realizedPnL, "Value:", value)
     # ! [pnlsingle]
 
     def marketDataTypeOperations(self):
@@ -720,7 +726,7 @@ class TestApp(TestWrapper, TestClient):
     # ! [marketdatatype]
     def marketDataType(self, reqId: TickerId, marketDataType: int):
         super().marketDataType(reqId, marketDataType)
-        print("MarketDataType. ReqId:", reqId, "Type:", marketDataType)
+        #print("MarketDataType. ReqId:", reqId, "Type:", marketDataType)
     # ! [marketdatatype]
 
     @printWhenExecuting
@@ -825,9 +831,9 @@ class TestApp(TestWrapper, TestClient):
         super().tickPrice(reqId, tickType, price, attrib)
         results = {"TickerId": reqId, "TickType": tickType, "Price": price}
         self.ret["TickPrice"].add(Hashabledict(results))
-        print("TickPrice. TickerId:", reqId, "tickType:", tickType,
-              "Price:", price, "CanAutoExecute:", attrib.canAutoExecute,
-              "PastLimit:", attrib.pastLimit, end=' ')
+        #print("TickPrice. TickerId:", reqId, "tickType:", tickType,
+        #      "Price:", price, "CanAutoExecute:", attrib.canAutoExecute,
+        #      "PastLimit:", attrib.pastLimit, end=' ')
         if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK:
             print("PreOpen:", attrib.preOpen)
         else:
@@ -840,7 +846,7 @@ class TestApp(TestWrapper, TestClient):
         super().tickSize(reqId, tickType, size)
         results = {"TickerId": reqId, "TickType": tickType, "Size": size}
         self.ret["TickSize"].add(Hashabledict(results))
-        print("TickSize. TickerId:", reqId, "TickType:", tickType, "Size:", size)
+        #print("TickSize. TickerId:", reqId, "TickType:", tickType, "Size:", size)
     # ! [ticksize]
 
     @iswrapper
@@ -848,8 +854,8 @@ class TestApp(TestWrapper, TestClient):
     def tickGeneric(self, reqId: TickerId, tickType: TickType, value: float):
         super().tickGeneric(reqId, tickType, value)
         results = {"TickerId": reqId, "TickType": tickType, "Value": value}
-        self.ret["TickGeneric"].add(Hashabledict(results))
-        print("TickGeneric. TickerId:", reqId, "TickType:", tickType, "Value:", value)
+        self.ret["TickGeneric"].add(Hashabledict(results,name="TickGeneric"))
+        #print("TickGeneric. TickerId:", reqId, "TickType:", tickType, "Value:", value)
     # ! [tickgeneric]
 
     @iswrapper
@@ -858,7 +864,7 @@ class TestApp(TestWrapper, TestClient):
         super().tickString(reqId, tickType, value)
         results = {"TickerId": reqId, "TickType": tickType, "Value": value}
         self.ret["TickString"].add(Hashabledict(results))
-        print("TickString. TickerId:", reqId, "Type:", tickType, "Value:", value)
+        #print("TickString. TickerId:", reqId, "Type:", tickType, "Value:", value)
     # ! [tickstring]
 
     @iswrapper
@@ -1403,8 +1409,8 @@ class TestApp(TestWrapper, TestClient):
     def tickReqParams(self, tickerId:int, minTick:float,
                       bboExchange:str, snapshotPermissions:int):
         super().tickReqParams(tickerId, minTick, bboExchange, snapshotPermissions)
-        print("TickReqParams. TickerId:", tickerId, "MinTick:", minTick,
-              "BboExchange:", bboExchange, "SnapshotPermissions:", snapshotPermissions)
+        #print("TickReqParams. TickerId:", tickerId, "MinTick:", minTick,
+        #      "BboExchange:", bboExchange, "SnapshotPermissions:", snapshotPermissions)
     # ! [tickReqParams]
 
     @iswrapper

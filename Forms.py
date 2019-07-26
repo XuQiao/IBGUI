@@ -9,19 +9,19 @@ class OrderForm(wx.Panel):
         self.parent = parent
         self.pnl = self.parent.pnl
         self.sizer = wx.BoxSizer(wx.HORIZONTAL)
-        self.cleaned_data = defaultdict(str)
+        self.cleaned_data = {'OrderType':'LMT','Action':'BUY','Symbol':'','Quantity':0, 'LmtPrice':0}
         self.createControls()
         self.bindEvents()
         self.doLayout()
 
     def createControls(self):
-        self.OrderType = wx.RadioBox(self.pnl, label = 'OrderType', pos = (80,30), choices = ["lmt","mkt"], 
+        self.OrderType = wx.RadioBox(self.pnl, label = 'OrderType', pos = (80,30), choices = ["LMT","MKT"], 
             majorDimension = 1, style = wx.RA_SPECIFY_ROWS) 
-        self.Action = wx.RadioBox(self.pnl, label = 'Action', pos = (60,30), choices = ["buy","sell"], 
+        self.Action = wx.RadioBox(self.pnl, label = 'Action', pos = (60,30), choices = ["BUY","SELL"], 
             majorDimension = 1, style = wx.RA_SPECIFY_ROWS) 
         self.hbox1 = wx.BoxSizer(wx.VERTICAL)
         l1 = wx.StaticText(self.pnl, -1, "Symbol") 
-        self.hbox1.Add(l1, 1, wx.ALIGN_LEFT|wx.ALL,5) 
+        self.hbox1.Add(l1, 1, wx.ALIGN_LEFT|wx.ALL,5)
         self.Symbol = wx.TextCtrl(self.pnl)
         self.hbox1.Add(self.Symbol)
 
@@ -34,50 +34,45 @@ class OrderForm(wx.Panel):
         self.hbox3 = wx.BoxSizer(wx.VERTICAL)
         l3 = wx.StaticText(self.pnl, -1, "LmtPrice") 
         self.hbox3.Add(l3, 1, wx.ALIGN_LEFT|wx.ALL,5) 
-        self.LmtPrice = NumCtrl(self.pnl,integerWidth=9,min=0,max=None)
+        self.LmtPrice = NumCtrl(self.pnl,fractionWidth = 2,min=0,max=None)
         self.hbox3.Add(self.LmtPrice)
-
-        self.btn = wx.Button(self.pnl, label="Submit Order")
 
     def bindEvents(self):
         for control, event, handler in \
-            [(self.btn, wx.EVT_BUTTON, self.OnSubmit),
-             (self.OrderType, wx.EVT_RADIOBOX, self.OnRadioBox1),
+             [(self.OrderType, wx.EVT_RADIOBOX, self.OnRadioBox1),
              (self.Action, wx.EVT_RADIOBOX, self.OnRadioBox2),
-             (self.Symbol, wx.EVT_TEXT_ENTER, self.OnSymbol),
-             (self.Quantity, wx.EVT_TEXT_ENTER, self.OnQuantity),
-             (self.LmtPrice, wx.EVT_TEXT_ENTER, self.OnLmtPrice)]:
+             (self.Symbol, wx.EVT_TEXT, self.OnSymbol),
+             (self.Quantity, wx.EVT_TEXT, self.OnQuantity),
+             (self.LmtPrice, wx.EVT_TEXT, self.OnLmtPrice)]:
             control.Bind(event, handler)
         
     def doLayout(self):
-        self.sizer.AddMany([self.btn, self.OrderType,self.Action,self.hbox1,self.hbox2,self.hbox3])
+        self.sizer.AddMany([self.OrderType,self.Action,self.hbox1,self.hbox2,self.hbox3])
 
     def OnRadioBox1(self,e): 
-        self.parent.SetStatusText(self.OrderType.GetStringSelection() +' is clicked from Radio Box')
-        
+        self.cleaned_data['OrderType'] = self.OrderType.GetStringSelection()
+        self.parent.SetStatusText('{} is clicked from Radio Box'.format(self.OrderType.GetStringSelection()))
+
     def OnRadioBox2(self,e): 
-        self.parent.SetStatusText(self.Action.GetStringSelection() +' is clicked from Radio Box')
+        self.cleaned_data['Action'] = self.Action.GetStringSelection()
+        self.parent.SetStatusText('{} is clicked from Radio Box'.format(self.Action.GetStringSelection()))
 
     def OnSymbol(self, e):
-        self.parent.SetStatusText("Entered Symbol: " + self.Symbol.GetValue())
+        self.cleaned_data['Symbol'] = self.Symbol.GetValue()
+        self.parent.SetStatusText("Entered Symbol: {}".format(self.Symbol.GetValue()))
 
     def OnQuantity(self, e):
-        self.parent.SetStatusText("Entered Quantity: " + self.Quantity.GetValue())
+        self.cleaned_data['Quantity'] = self.Quantity.GetValue()
+        self.parent.SetStatusText("Entered Quantity: {}".format(self.Quantity.GetValue()))
 
     def OnLmtPrice(self, e):
-        self.parent.SetStatusText("Entered Limit Price: " + self.LmtPrice.GetValue())
-
-    def OnSubmit(self, event):
-        self.cleaned_data['OrderType'] = self.OrderType.GetStringSelection()
-        self.cleaned_data['Action'] = self.Action.GetStringSelection()
-        self.cleaned_data['Symbol'] = self.Symbol.GetValue()
-        if self.OrderType.GetStringSelection() == "lmt":
+        self.parent.SetStatusText("Entered Limit Price: {}".format(self.LmtPrice.GetValue()))
+        if self.OrderType.GetStringSelection() == "LMT":
             # Only do something if both fields are valid so far.
             if not self.LmtPrice.GetValue():
                 wx.MessageBox('Please Fill in the Limit Price', 'Error', wx.OK)
             else:
-                self.cleaned_data["LmtPrice"] = 0
-        if self.OrderType.GetStringSelection() == "mkt":
+                self.cleaned_data["LmtPrice"] = self.LmtPrice.GetValue()
+        if self.OrderType.GetStringSelection() == "MKT":
             self.LmtPrice.SetValue(0)
             self.cleaned_data["LmtPrice"] = 0
-        self.cleaned_data['Quantity'] = self.Quantity.GetValue()
