@@ -19,7 +19,7 @@ from scipy.optimize import minimize
 import matplotlib
 
 class Actions():
-    def __init__(self):
+    def __init__(self, ip = "127.0.0.1", port = 7497, clientId = 0):
         try:
             self.app = TestApp()
             self.app.globalCancelOnly = False
@@ -31,7 +31,7 @@ class Actions():
             #self.app.dumpReqAnsErrSituation()
         if (not self.app.started) or (not self.app.isConnected()) or (not self.app.done):
             try:
-                self.app.connect("127.0.0.1", 7497, clientId=0)
+                self.app.connect(ip, port, clientId)
                 print("serverVersion:%s connectionTime:%s" % (self.app.serverVersion(),
                                                           self.app.twsConnectionTime()))
                 if self.app.isConnected():
@@ -43,8 +43,10 @@ class Actions():
                 self.app.conn.disconnect()
         self.context = {}
         self.app.callMap = {}
+        self.app.accountMap = {}
         self.method = "VarCov"
         self.time_p = 'OneWeek'
+        self.WTime = 0.05
 
     def get_msg(self):
         msgs = [msg.replace(b'\x00',b'').decode('utf-8') for msg in self.app.msgs]
@@ -54,15 +56,15 @@ class Actions():
             ("\n".join(list(self.app.ret['Error'])[-1]['Msg']) if 
                 len(self.app.ret['Error'])>0 else "Unknown Error")})
         self.context["Positions"] = sorted(list(self.app.ret["Positions"]),
-            key=lambda k: k['Symbol'])
+            key=lambda k: k['Account']+k['Symbol'])
         self.context["OrderStatus"] = sorted(list(self.app.ret["OrderStatus"]),
             key=lambda k:k['Id'])
         self.context["OpenOrder"] = sorted(list(self.app.ret["OpenOrder"]),
-            key=lambda k:k['OrderId'])
+            key=lambda k:k['Account']+str(k['OrderId']))
         self.context["AccountSummary"] = sorted(list(self.app.ret["AccountSummary"]),
-            key=lambda k:k['Tag'])
+            key=lambda k:k['Account']+k['Tag'])
         self.context["HistoricalData"] = sorted(list(self.app.ret["HistoricalData"]),
-            key=lambda k:k['Symbol'])
+            key=lambda k:k['Account']+k['Symbol'])
         self.context.update({k:v for k,v in self.app.ret.items() if k not in self.context})
     
     def clear(self):
@@ -81,27 +83,50 @@ class Actions():
         else:
             print("Executing requests")
             self.app.reqMarketDataType(3); # delayed
+            time.sleep(self.WTime)
             self.app.reqManagedAccts()
-            time.sleep(0.2)
-            self.app.reqAccountSummary(self.app.nextOrderId(), "All", 
-                #AccountSummaryTags.AllTags)
-                "AvailableFunds, NetLiquidation, BuyingPower")
-            time.sleep(0.2)
-            self.app.cancelAccountSummary(self.app.nextValidOrderId-1);
+            time.sleep(self.WTime)
             self.app.run()
 
-            time.sleep(0.2)
-            #self.app.reqPnL(self.app.nextOrderId(), self.app.account, "")
-            time.sleep(0.2)
-            self.app.reqPositions()
-            time.sleep(0.2)
-            self.app.cancelPositions()
-            time.sleep(0.2)
+            self.app.reqAccountSummary(self.app.nextOrderId(), "All", 
+                "AvailableFunds, NetLiquidation, BuyingPower")
+                #AccountSummaryTags.AllTags)
+            time.sleep(self.WTime)
+            self.app.cancelAccountSummary(self.app.nextValidOrderId-1);
+            time.sleep(self.WTime)
             self.app.run()
-            if len(self.app.ret['Error']) > 0:
+            time.sleep(self.WTime)
+            for account in self.app.ret["Account_list"]:
+                self.app.accountMap[self.app.nextValidOrderId] = account
+                self.app.reqPnL(self.app.nextOrderId(), account, "")
+                time.sleep(5
+                    *self.WTime)
+                self.app.cancelPnL(self.app.nextValidOrderId-1)
+                self.app.run()
+
+            time.sleep(self.WTime)
+            self.app.reqPositions()
+            self.app.run()
+            time.sleep(self.WTime)
+            self.app.cancelPositions()
+            time.sleep(self.WTime)
+            self.app.run()
+            if False: #len(self.app.ret['Error']) > 0:
+                #print(self.app.ret['Error'])
             #    self.app.disconnect()
                 pass
             else:
+                temp_daily_pnls = set()
+                for daily_pnl in self.app.ret["Daily_PnL"]:
+                    temp_daily_pnls.add(daily_pnl)
+                    for reqId, account in self.app.accountMap.items():
+                        if reqId == daily_pnl['ReqId']:
+                            temp_daily_pnls.remove(daily_pnl)
+                            daily_pnl.update({'Account':account})
+                            temp_daily_pnls.add(daily_pnl)
+                del self.app.ret["Daily_PnL"]
+                self.app.ret["Daily_PnL"] = temp_daily_pnls
+
                 for positions in self.app.ret["Positions"]:
                     contract = Contract()
                     contract.symbol = positions['Symbol']
@@ -110,15 +135,15 @@ class Actions():
                     contract.conId = positions['ConId']
                     contract.exchange = "SMART"
                     self.app.callMap[self.app.nextValidOrderId] = positions['ConId']
-                    time.sleep(0.2)
+                    time.sleep(self.WTime)
                     self.app.reqPnLSingle(self.app.nextOrderId(), 
-                        self.app.account, "", positions['ConId'])
-                    time.sleep(0.2)
+                    positions['Account'], "", positions['ConId'])
+                    time.sleep(self.WTime)
                     self.app.cancelPnLSingle(self.app.nextValidOrderId-1)
-                    time.sleep(0.2)
+                    time.sleep(self.WTime)
                     self.app.callMap[self.app.nextValidOrderId] = positions['ConId']
                     self.app.reqMktData(self.app.nextOrderId(), contract, "104,106,258", False, False, []);
-                    time.sleep(0.2)
+                    time.sleep(self.WTime)
                     self.app.cancelMktData(self.app.nextValidOrderId-1)
                 self.app.run()
                 temp_Positions = set()
@@ -126,10 +151,11 @@ class Actions():
                     temp_Positions.add(positions)
                     for daily_PnL_Single in self.app.ret['Daily_PnL_Single']:
                         for reqId, ConId in self.app.callMap.items():
-                            if reqId == daily_PnL_Single['ReqId'] and ConId == positions['ConId']:
+                            if reqId == daily_PnL_Single['ReqId'] and ConId == positions['ConId'] and positions['Account'] == self.app.account:
                                 temp_Positions.remove(positions)
-                                if(daily_PnL_Single['RealizedPnL'] > 1e20):
-                                    daily_PnL_Single['RealizedPnL'] = 0
+                                for key,value in daily_PnL_Single.items():
+                                    if(value > 1e20):
+                                        daily_PnL_Single[key] = 0
                                 positions.update(daily_PnL_Single)
                                 temp_Positions.add(positions)
                 del self.app.ret["Positions"]
@@ -141,19 +167,15 @@ class Actions():
                     for tickGeneric in self.app.ret['TickGeneric']:
                         #for reqId, contract in self.app.callMap.items(): 
                         for reqId, ConId in self.app.callMap.items(): 
-                            if reqId == tickGeneric['TickerId'] and ConId == positions['ConId'] and tickGeneric['TickType'] == 24:
+                            if reqId == tickGeneric['TickerId'] and ConId == positions['ConId'] and tickGeneric['TickType'] == 24 and positions['Account'] == self.app.account:
                                 temp_Positions.remove(positions)
                                 positions.update({'ImpVol': tickGeneric['Value']})
                                 temp_Positions.add(positions)
 
                 del self.app.ret["Positions"]
                 self.app.ret["Positions"] = temp_Positions
-                self.app.reqPnL(self.app.nextOrderId(), self.app.account, "")
-                time.sleep(0.2)
-                self.app.cancelPnL(self.app.nextValidOrderId-1)
-                time.sleep(0.2)
                 self.app.reqAllOpenOrders()
-                time.sleep(0.2)
+                time.sleep(self.WTime)
                 # ! [clientrun]
                 self.app.run()
                 print("Executing requests ... finished")
@@ -168,34 +190,49 @@ class Actions():
         self.app.run()
         self.get_msg()
 
-    def place_order(self, orderform = None):
-        Symbol = orderform.cleaned_data['Symbol']
-        OrderType = orderform.cleaned_data['OrderType']
-        Quantity = orderform.cleaned_data['Quantity']
-        Action = orderform.cleaned_data['Action']
-        LmtPrice = orderform.cleaned_data['LmtPrice']
-        #self.app.reqIds(-1)
+    def place_order(self, **kwargs):
         order = Order()
-        order.transmit = True
-        order.action = Action
-        order.orderType = OrderType
-        order.totalQuantity = Quantity
-        order.lmtPrice = LmtPrice
-        #order.tif = "OPG"
         contract = Contract()
-        contract.symbol = Symbol
-        contract.secType = "STK"
-        contract.currency = "USD"
-        contract.exchange = "SMART"
+        order.transmit = True
+        print('place_order',kwargs)
+        if 'orderform' in kwargs.keys():
+            orderform = kwargs['orderform']
+            print(orderform.cleaned_data)
+            Symbol = orderform.cleaned_data['Symbol']
+            OrderType = orderform.cleaned_data['OrderType']
+            Quantity = orderform.cleaned_data['Quantity']
+            Action = orderform.cleaned_data['Action']
+            LmtPrice = orderform.cleaned_data['LmtPrice']
+            
+            order.action = Action
+            order.orderType = OrderType
+            order.totalQuantity = Quantity
+            order.lmtPrice = LmtPrice
+                   
+            contract.symbol = Symbol
+            contract.secType = "STK"
+            contract.currency = "USD"
+            contract.exchange = "SMART"
+        if 'openorder' in kwargs.keys():
+            openorder = kwargs['openorder']
+            order.action = openorder["Action"]
+            order.orderType = openorder['OrderType']
+            order.totalQuantity = openorder['TotalQty']
+            order.lmtPrice = openorder['LmtPrice']
+
+            contract.symbol = openorder['Symbol']
+            contract.secType = openorder["SecType"]
+            contract.currency = openorder["Currency"]
+            contract.exchange = openorder["Exchange"]
         self.app.placeOrder(self.app.nextOrderId(), contract, order)
         self.get_msg()
-        self.context.update({'orderform':orderform})
-        self.connect()
-    
+        self.context.update({'contract':contract, 'order':order})
+        #self.connect()
+
     def cancel_order(self, Id):
         print("cancelling")
         self.app.cancelOrder(Id)
-        self.connect()
+        #self.connect()
 
     def risks(self):
         self.get_stats()
@@ -230,17 +267,20 @@ class Actions():
         if self.time_p == "OneDay": self.time_interval = 1
         if self.time_p == "OneWeek": self.time_interval = 5
         if self.time_p == "OneMonth": self.time_interval = 20
-        symbols = "SPY,"
+        symbols = []
+        #for position in self.app.ret["Positions"]:
+        #    symbols = symbols + position["Symbol"] + ","
+        #if len(self.app.ret["Positions"]) > 0:
+        #    symbols = symbols[:-1]
         for position in self.app.ret["Positions"]:
-            symbols = symbols + position["Symbol"] + ","
-        if len(self.app.ret["Positions"]) > 0:
-            symbols = symbols[:-1]
-        symbols = [position["Symbol"] for position in self.app.ret["Positions"]]
-        if "SPY" not in symbols:
+            if position['Account'] == self.app.account:
+                symbols.append((position["Symbol"],position["Account"]))
+        symbols = dict(symbols)
+        if "SPY" not in symbols.keys():
             symbols.append("SPY")
         d = datetime.datetime.today()
         today = d.strftime('%m-%d-%Y')
-        for symbol in symbols:
+        for symbol, account in symbols.items():
         #down_url = "https://api.iextrading.com/1.0/stock/market/batch?symbols="+symbols+"&types=chart&range=5y"
             #down_url="https://cloud.iexapis.com/stable/stock/market/batch?symbols="+ \
                 #symbol+"&types=chart&range=5y&token="+"pk_973c542cc778404cba237ec8c52453af"
@@ -260,7 +300,7 @@ class Actions():
                     df = df.set_index("date")
                     df.to_csv(file)
             df = pd.read_csv(file,index_col="date")
-            self.app.ret["HistoricalData"].add(Hashabledict({'Symbol':symbol, 'TS':df},name="HistoricalData"))
+            self.app.ret["HistoricalData"].add(Hashabledict({'Account': account, 'Symbol':symbol, 'TS':df},name="HistoricalData"))
             self.get_msg()
 
     def getcovmatrix(self):
@@ -271,14 +311,15 @@ class Actions():
         for historicalData in self.context["HistoricalData"]:
             contract = historicalData['Symbol']
             for positions in self.app.ret['Positions']:
-                if positions['Symbol'] == contract:
+                if positions['Symbol'] == contract and positions['Account'] == self.app.account:
                     stocks_df.append(historicalData['TS'])
                     self.stocks.append(historicalData['Symbol'])
-        self.stocks_df = pd.concat(stocks_df,axis=1,sort=False)
-        self.stocks_df.columns = self.stocks
-        self.log_ret = np.log(self.stocks_df/self.stocks_df.shift(-self.time_interval))
-        self.ret = self.stocks_df/self.stocks_df.shift(-self.time_interval) - 1
-        self.covMatrix = self.log_ret.cov()
+        if len(self.stocks) > 0:
+            self.stocks_df = pd.concat(stocks_df,axis=1,sort=False)
+            self.stocks_df.columns = self.stocks
+            self.log_ret = np.log(self.stocks_df/self.stocks_df.shift(-self.time_interval))
+            self.return_ = self.stocks_df/self.stocks_df.shift(-self.time_interval) - 1
+            self.covMatrix = self.log_ret.cov()
 
     def getbeta(self):
         print("get beta************* ")
@@ -287,7 +328,7 @@ class Actions():
             temp_Positions = set()
             for positions in self.app.ret['Positions']:
                 temp_Positions.add(positions)
-                if positions['Symbol'] == contract:
+                if positions['Symbol'] == contract and positions['Account'] == self.app.account:
                     temp_Positions.remove(positions)
                     positions['Beta'] = self.covMatrix[contract]['SPY'] / self.covMatrix['SPY']['SPY']
                     temp_Positions.add(positions)
@@ -298,12 +339,12 @@ class Actions():
         assets = {}
         for historicalData in self.context["HistoricalData"]:
             contract = historicalData['Symbol']
-            meanreturn = np.mean(self.ret[contract].dropna())
-            stdreturn = np.std(self.ret[contract].dropna())
+            meanreturn = np.mean(self.return_[contract].dropna())
+            stdreturn = np.std(self.return_[contract].dropna())
             temp_Positions = set()
             for positions in self.app.ret['Positions']:
                 temp_Positions.add(positions)
-                if positions['Symbol'] == contract:
+                if positions['Symbol'] == contract and positions['Account'] == self.app.account:
                     temp_Positions.remove(positions)
                     #positions['Beta'] = self.covMatrix[contract]['SPY'] / self.covMatrix['SPY']['SPY']
                     positions['Assets'] = positions["AvgCost"] * positions['Position']
@@ -335,9 +376,9 @@ class Actions():
             del self.app.ret['Positions']
             self.app.ret['Positions'] = temp_Positions
         self.assets = np.array(list(assets.values()))
-        self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_90"},name="AccountSummary"))
-        self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_95"},name="AccountSummary"))
-        self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_99"},name="AccountSummary"))
+        #self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_90"},name="AccountSummary"))
+        #self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_95"},name="AccountSummary"))
+        #self.app.ret['AccountSummary'].discard(Hashabledict({"Tag": "VaR_99"},name="AccountSummary"))
         self.app.ret['AccountSummary'].add(Hashabledict({"ReqId": -1, "Account": self.app.account, 
               "Tag": "VaR_90", "Currency": "",
               "Value": 1.282 * np.sqrt(np.dot(self.assets.T, np.dot(self.covMatrix, self.assets)))},

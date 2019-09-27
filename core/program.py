@@ -50,26 +50,42 @@ class Hashabledict(OrderedDict):
         self.name = name
     def __hash__(self):
         if self.name == "AccountSummary":
-            return hash(self['Tag'])
+            return hash("{},{}".format(self['Tag'],self['Account']))
         elif self.name == "Positions":
-            return hash(self['ConId'])
+            return hash("{},{}".format(self['ConId'],self['Account']))
         elif self.name == "OrderStatus":
-            return hash(self['Id'])        
+            return hash("{}".format(self['Id']))
         elif self.name == "OpenOrder":
-            return hash(self['OrderId'])
+            return hash("{},{}".format(self['OrderId'],self['Account']))
         elif self.name == "HistoricalData":
             #return hash(self['requestId'])
-            return hash(self['Symbol'])
+            return hash("{}".format(self['Symbol']))
         elif self.name == "Daily_PnL":
-            return hash(self['ReqId'])
+            return hash("{}".format(self['ReqId']))
         elif self.name == "Daily_PnL_Single":
-            return hash(self['ReqId'])
+            return hash("{}".format(self['ReqId']))
         elif self.name == "TickGeneric":
             return hash("{},{}".format(self['TickerId'],self['TickType']))
         else:
             return hash(frozenset(self))
+
+    def __str__(self):
+        s = ""
+        for k,v in self.items():
+            s += "{}: {}".format(k, v)
+        return s
+
     def __eq__(self, other):
         return self.__hash__() == other.__hash__()
+
+    def same(self, other):
+        def hash_1(self):
+            if self.name == "OpenOrder":
+                return hash("{},{},{},{},{},{},{},{},{},{},{}".format(self["Symbol"], self["SecType"], 
+                    self["Exchange"], self["Currency"],  self["Action"],
+                    self["OrderType"], self["TotalQty"], self["CashQty"], 
+                    self["LmtPrice"], self["AuxPrice"], self["Status"]))
+        return hash_1(self) == hash_1(other)
 
 def SetupLogger():
     if not os.path.exists("log"):
@@ -398,8 +414,8 @@ class TestApp(TestWrapper, TestClient):
         
         results = {"PermId": order.permId, "ClientId": order.clientId, "OrderId": orderId, 
               "Account": order.account, "Symbol": contract.symbol, "SecType": contract.secType,
-              "Exchange": contract.exchange, "Action": order.action, "OrderType": order.orderType,
-              "TotalQty": order.totalQuantity, "CashQty": order.cashQty, 
+              "Exchange": contract.exchange, "Currency": contract.currency, "Action": order.action,
+              "OrderType": order.orderType, "TotalQty": order.totalQuantity, "CashQty": order.cashQty, 
               "LmtPrice": order.lmtPrice, "AuxPrice": order.auxPrice, "Status": orderState.status}
         self.ret["OpenOrder"].add(Hashabledict(results,name="OpenOrder"))
         #print("OpenOrder. PermId: ", order.permId, "ClientId:", order.clientId, " OrderId:", orderId, 
@@ -562,11 +578,11 @@ class TestApp(TestWrapper, TestClient):
     # ! [managedaccounts]
     def managedAccounts(self, accountsList: str):
         super().managedAccounts(accountsList)
-        print("Account list:", accountsList)
         # ! [managedaccounts]
         self.account = accountsList.split(",")[0]
         for account in accountsList.split(","):
-            self.ret["Account_list"].add(account)
+            if account:
+                self.ret["Account_list"].add(account)
 
     @iswrapper
     # ! [accountsummary]
@@ -575,7 +591,7 @@ class TestApp(TestWrapper, TestClient):
         super().accountSummary(reqId, account, tag, value, currency)
         results = {"ReqId": reqId, "Account": account,
               "Tag": tag, "Value": value, "Currency": currency}
-        self.ret["AccountSummary"].add(Hashabledict(results,name="AccountSummary"))
+        self.ret["AccountSummary"].add(Hashabledict(results, name="AccountSummary"))
         #print("AccountSummary. ReqId:", reqId, "Account:", account,
         #      "Tag: ", tag, "Value:", value, "Currency:", currency)
     # ! [accountsummary]
@@ -584,7 +600,7 @@ class TestApp(TestWrapper, TestClient):
     # ! [accountsummaryend]
     def accountSummaryEnd(self, reqId: int):
         super().accountSummaryEnd(reqId)
-        print("AccountSummaryEnd. ReqId:", reqId)
+        #print("AccountSummaryEnd. ReqId:", reqId)
     # ! [accountsummaryend]
 
     @iswrapper
@@ -661,7 +677,7 @@ class TestApp(TestWrapper, TestClient):
     # ! [positionmultiend]
     def positionMultiEnd(self, reqId: int):
         super().positionMultiEnd(reqId)
-        print("PositionMultiEnd. RequestId:", reqId)
+        #print("PositionMultiEnd. RequestId:", reqId)
     # ! [positionmultiend]
 
     @iswrapper

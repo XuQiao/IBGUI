@@ -38,7 +38,6 @@ class LoginDialog(wx.Dialog):
         main_sizer.Add(btn, 0, wx.ALL|wx.CENTER, 5)
  
         self.SetSizer(main_sizer)
- 
     #----------------------------------------------------------------------
     def onLogin(self, event):
         """
